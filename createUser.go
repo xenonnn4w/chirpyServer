@@ -7,11 +7,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/xenonnn4w/chirpy/internal/auth"
+	"github.com/xenonnn4w/chirpy/internal/database"
 )
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 	type User struct {
 		ID        uuid.UUID `json:"id"`
@@ -25,7 +28,15 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		log.Printf("Error decoding JSON %v", err)
 	}
-	user, err := cfg.db.CreateUser(r.Context(), params.Email)
+	hashPswd, err := auth.HashPassword(params.Password)
+	if err != nil {
+		log.Printf("Error Hashing the password %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	user, err := cfg.db.CreateUser(r.Context(), database.CreateUserParams{
+		Email:    params.Email,
+		Password: hashPswd})
 	if err != nil {
 		log.Printf("Error creating user %v", err)
 		w.WriteHeader(http.StatusInternalServerError)

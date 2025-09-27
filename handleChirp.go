@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/xenonnn4w/chirpy/internal/auth"
 	"github.com/xenonnn4w/chirpy/internal/database"
 )
 
 func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Body   string `json:"body"`
-		UserID string `json:"user_id"`
+		Body string `json:"body"`
 	}
 	type ChirpResponse struct {
 		ID        uuid.UUID `json:"id"`
@@ -22,20 +22,28 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 		Body      string    `json:"body"`
 		UserID    uuid.UUID `json:"user_id"`
 	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("Error getting bearer token %v", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	userID, err := auth.ValidateJWT(token, cfg.JWTSecret)
+	if err != nil {
+		log.Printf("Error validating JWT %v", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		log.Printf("Error decoding JSON %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	userID, err := uuid.Parse(params.UserID)
-	if err != nil {
-		log.Printf("Error parsing user ID %v", err)
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
+
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   params.Body,
 		UserID: userID,

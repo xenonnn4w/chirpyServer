@@ -16,18 +16,21 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	Platform       string
+	JWTSecret      string
 }
 
 func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
 	platform := os.Getenv("PLATFORM")
+	log.Printf("Platform loaded: '%s'", platform)
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	dbQueries := database.New(db)
+	jwtSecret := os.Getenv("JWT_SECRET")
 
 	const filepathRoot = "."
 	const port = "8080"
@@ -36,6 +39,7 @@ func main() {
 		fileserverHits: atomic.Int32{},
 		db:             dbQueries,
 		Platform:       platform,
+		JWTSecret:      jwtSecret,
 	}
 
 	mux := http.NewServeMux()
@@ -48,6 +52,9 @@ func main() {
 	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
 	mux.HandleFunc("POST /api/chirps", apiCfg.handlerCreateChirp)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handlerGetChirpByID)
+	mux.HandleFunc("POST /api/login", apiCfg.handlerLogin)
+	mux.HandleFunc("POST /api/refresh", apiCfg.handlerRefresh)
+	mux.HandleFunc("POST /api/revoke", apiCfg.handlerRevoke)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
