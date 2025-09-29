@@ -68,6 +68,7 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 }
 
 func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
+
 	type Chirp struct {
 		ID        uuid.UUID `json:"id"`
 		CreatedAt time.Time `json:"created_at"`
@@ -75,7 +76,51 @@ func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 		Body      string    `json:"body"`
 		UserID    uuid.UUID `json:"user_id"`
 	}
-	chirps, err := cfg.db.GetChirps(r.Context())
+
+	authorIDStr := r.URL.Query().Get("author_id")
+	sort := r.URL.Query().Get("sort")
+
+	if authorIDStr != "" {
+		authorID, err := uuid.Parse(authorIDStr)
+		if err != nil {
+			log.Printf("Error parsing author ID %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		chirps, err := cfg.db.GetChirpsByAuthorID(r.Context(), authorID)
+		if err != nil {
+			log.Printf("Error getting chirps by author ID %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		chirpResponses := []Chirp{}
+		for _, chirp := range chirps {
+			chirpResponses = append(chirpResponses, Chirp{
+				ID:        chirp.ID,
+				CreatedAt: chirp.CreatedAt,
+				UpdatedAt: chirp.UpdatedAt,
+				Body:      chirp.Body,
+				UserID:    chirp.UserID,
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(chirpResponses)
+		return
+	}
+	log.Printf("Getting all chirps")
+	var chirps []database.Chirp
+	var err error
+	switch sort {
+	case "asc", "":
+		chirps, err = cfg.db.GetChirpsAsc(r.Context())
+	case "desc":
+		chirps, err = cfg.db.GetChirpsDesc(r.Context())
+	default:
+		chirps, err = cfg.db.GetChirpsAsc(r.Context())
+	}
+
 	if err != nil {
 		log.Printf("Error getting chirps %v", err)
 		w.WriteHeader(http.StatusInternalServerError)

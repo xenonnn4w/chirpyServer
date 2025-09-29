@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -91,4 +92,19 @@ func MakeRefreshToken() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+func GetAPIKey(headers http.Header) (string, error) {
+	apiKey := headers.Get("Authorization")
+	log.Printf("API key: %s", apiKey)
+	if apiKey == "" {
+		return "", errors.New("no Authorization header found")
+	}
+
+	parts := strings.Split(apiKey, " ")
+	if len(parts) != 2 || parts[0] != "ApiKey" {
+		return "", errors.New("invalid Authorization header format")
+	}
+
+	return parts[1], nil
 }

@@ -13,10 +13,11 @@ import (
 )
 
 type apiConfig struct {
-	fileserverHits atomic.Int32
-	db             *database.Queries
-	Platform       string
-	JWTSecret      string
+	fileserverHits     atomic.Int32
+	db                 *database.Queries
+	Platform           string
+	JWTSecret          string
+	polkaWebhookSecret string
 }
 
 func main() {
@@ -31,15 +32,18 @@ func main() {
 
 	dbQueries := database.New(db)
 	jwtSecret := os.Getenv("JWT_SECRET")
+	polkaWebhookSecret := os.Getenv("POLKA_KEY")
+	log.Printf("Polka webhook secret loaded: '%s'", polkaWebhookSecret)
 
 	const filepathRoot = "."
 	const port = "8080"
 
 	apiCfg := apiConfig{
-		fileserverHits: atomic.Int32{},
-		db:             dbQueries,
-		Platform:       platform,
-		JWTSecret:      jwtSecret,
+		fileserverHits:     atomic.Int32{},
+		db:                 dbQueries,
+		Platform:           platform,
+		JWTSecret:          jwtSecret,
+		polkaWebhookSecret: polkaWebhookSecret,
 	}
 
 	mux := http.NewServeMux()
@@ -55,6 +59,9 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiCfg.handlerLogin)
 	mux.HandleFunc("POST /api/refresh", apiCfg.handlerRefresh)
 	mux.HandleFunc("POST /api/revoke", apiCfg.handlerRevoke)
+	mux.HandleFunc("PUT /api/users", apiCfg.handlerUpdateUser)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.handlerDeleteChirp)
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlerPolkaWebhook)
 
 	srv := &http.Server{
 		Addr:    ":" + port,

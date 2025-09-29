@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,7 +66,7 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, created_at, updated_at, email, password)
 VALUES (gen_random_uuid(), now(), now(), $1, $2)
-RETURNING id, created_at, updated_at, email, password
+RETURNING id, created_at, updated_at, email, password, is_chirpy_red
 `
 
 type CreateUserParams struct {
@@ -82,6 +83,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.Email,
 		&i.Password,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -92,6 +94,21 @@ DELETE FROM users
 
 func (q *Queries) DeleteAllUsers(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, deleteAllUsers)
+	return err
+}
+
+const deleteChirp = `-- name: DeleteChirp :exec
+DELETE FROM chirps
+WHERE id=$1 AND user_id=$2
+`
+
+type DeleteChirpParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) DeleteChirp(ctx context.Context, arg DeleteChirpParams) error {
+	_, err := q.db.ExecContext(ctx, deleteChirp, arg.ID, arg.UserID)
 	return err
 }
 
@@ -113,13 +130,82 @@ func (q *Queries) GetChirpByID(ctx context.Context, id uuid.UUID) (Chirp, error)
 	return i, err
 }
 
-const getChirps = `-- name: GetChirps :many
+const getChirpsAsc = `-- name: GetChirpsAsc :many
 SELECT id, created_at, updated_at, body, user_id FROM chirps
 ORDER BY created_at
 `
 
-func (q *Queries) GetChirps(ctx context.Context) ([]Chirp, error) {
-	rows, err := q.db.QueryContext(ctx, getChirps)
+func (q *Queries) GetChirpsAsc(ctx context.Context) ([]Chirp, error) {
+	rows, err := q.db.QueryContext(ctx, getChirpsAsc)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Chirp
+	for rows.Next() {
+		var i Chirp
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Body,
+			&i.UserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChirpsByAuthorID = `-- name: GetChirpsByAuthorID :many
+SELECT id, created_at, updated_at, body, user_id FROM chirps
+WHERE user_id = $1
+ORDER BY created_at
+`
+
+func (q *Queries) GetChirpsByAuthorID(ctx context.Context, userID uuid.UUID) ([]Chirp, error) {
+	rows, err := q.db.QueryContext(ctx, getChirpsByAuthorID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Chirp
+	for rows.Next() {
+		var i Chirp
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Body,
+			&i.UserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChirpsDesc = `-- name: GetChirpsDesc :many
+SELECT id, created_at, updated_at, body, user_id FROM chirps
+ORDER BY created_at DESC
+`
+
+func (q *Queries) GetChirpsDesc(ctx context.Context) ([]Chirp, error) {
+	rows, err := q.db.QueryContext(ctx, getChirpsDesc)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +234,7 @@ func (q *Queries) GetChirps(ctx context.Context) ([]Chirp, error) {
 }
 
 const getUserEmail = `-- name: GetUserEmail :one
-SELECT id, created_at, updated_at, email, password FROM users
+SELECT id, created_at, updated_at, email, password, is_chirpy_red FROM users
 WHERE email = $1
 `
 
@@ -161,12 +247,13 @@ func (q *Queries) GetUserEmail(ctx context.Context, email string) (User, error) 
 		&i.UpdatedAt,
 		&i.Email,
 		&i.Password,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
 
 const getUserFromRefreshToken = `-- name: GetUserFromRefreshToken :one
-SELECT u.id, u.created_at, u.updated_at, u.email, u.password FROM users u
+SELECT u.id, u.created_at, u.updated_at, u.email, u.password, u.is_chirpy_red FROM users u
 JOIN refresh_tokens rt ON u.id = rt.user_id
 WHERE rt.token = $1 AND rt.expires_at > NOW() AND rt.revoked_at IS NULL
 `
@@ -180,6 +267,7 @@ func (q *Queries) GetUserFromRefreshToken(ctx context.Context, token string) (Us
 		&i.UpdatedAt,
 		&i.Email,
 		&i.Password,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -193,4 +281,57 @@ WHERE token = $1
 func (q *Queries) RevokeRefreshToken(ctx context.Context, token string) error {
 	_, err := q.db.ExecContext(ctx, revokeRefreshToken, token)
 	return err
+}
+
+const updateUser = `-- name: UpdateUser :one
+UPDATE users
+SET email = $1, password = $2, updated_at = NOW()
+WHERE id = $3
+RETURNING id, created_at, updated_at, email, password, is_chirpy_red
+`
+
+type UpdateUserParams struct {
+	Email    string
+	Password string
+	ID       uuid.UUID
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUser, arg.Email, arg.Password, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.Password,
+		&i.IsChirpyRed,
+	)
+	return i, err
+}
+
+const updateUserIsChirpyRed = `-- name: UpdateUserIsChirpyRed :one
+UPDATE users
+SET is_chirpy_red = $1, updated_at = NOW()
+WHERE id = $2
+RETURNING id, created_at, updated_at, email, password, is_chirpy_red
+`
+
+type UpdateUserIsChirpyRedParams struct {
+	IsChirpyRed sql.NullBool
+	ID          uuid.UUID
+}
+
+func (q *Queries) UpdateUserIsChirpyRed(ctx context.Context, arg UpdateUserIsChirpyRedParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserIsChirpyRed, arg.IsChirpyRed, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.Password,
+		&i.IsChirpyRed,
+	)
+	return i, err
 }
