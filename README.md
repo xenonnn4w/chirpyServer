@@ -2,6 +2,10 @@
 
 A small Twitter-style REST API built with Go and PostgreSQL. It supports user accounts, authenticated chirp creation and deletion, token refresh, and a simple web interface.
 
+## Architecture
+
+![Detailed Chirpy system architecture](docs/architecture/chirpy-system-architecture.drawio.svg)
+
 ## Stack
 
 - Go 1.24 with `net/http`
